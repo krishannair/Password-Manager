@@ -122,7 +122,7 @@ std::string decrypt_aes(const std::vector<unsigned char>& ciphertext, const std:
 }
 
 
-std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> load_from_db(const std::string search_site, const std::string& database_name) {
+std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> load_from_db(std::string search_site, const std::string& database_name) {
     sqlite3* db;
     int rc = sqlite3_open((database_name).c_str(), &db);
     if(rc) {
@@ -135,7 +135,6 @@ std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsi
     std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> password_entries;
 
     if(search_site == "") {
-
         std::string select_sql = "SELECT site, iv, encrypted_password FROM passwords";
         sqlite3_stmt* stmt;
         rc = sqlite3_prepare_v2(db, select_sql.c_str(), -1, &stmt, nullptr);
@@ -162,6 +161,7 @@ std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsi
         sqlite3_finalize(stmt);  // Clean up after using the statement
     }
     else {
+        search_site = "%" + search_site + "%";
         std::string select_sql = "SELECT site, iv, encrypted_password FROM passwords WHERE LOWER(site) LIKE LOWER(?)";
         sqlite3_stmt* stmt;
         rc = sqlite3_prepare_v2(db, select_sql.c_str(), -1, &stmt, nullptr);
