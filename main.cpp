@@ -20,6 +20,7 @@ struct UIData {
     Fl_Input* siteInput;
     Fl_Input* passInput;
     Fl_Multiline_Output* output;
+    Fl_Input* masterInput;
 };
 
 void save_to_db(const std::string& database_name, const std::string& site, const std::vector <unsigned char>& encrypted_password, const std::vector <unsigned char>& iv) {
@@ -227,11 +228,11 @@ std::pair<std::vector<unsigned char>, std::vector<unsigned char>> encrypt_aes(co
 }
 
 void load_into_ui(Fl_Widget*, void* data) {
-    Fl_Multiline_Output* output = static_cast<Fl_Multiline_Output*>(data);
-    output->value(""); // Clear previous output
+    UIData* uiData = static_cast<UIData*>(data);
+    std::string masterkey = uiData->masterInput->value();
+    uiData->output->value("");  // Clear previous output
     std::string site, encrypted_password;
     std::string allPasswords="";
-    std::string masterkey = "abcd1234";
     std::vector<unsigned char> key, salt, iv;
     std::ifstream file("salt.dat", std::ios::binary);
     if(!file) {
@@ -258,24 +259,23 @@ void load_into_ui(Fl_Widget*, void* data) {
     }
     std::cout << "9" << std::endl;
     std::cout << allPasswords << std::endl;
-    output->value(allPasswords.empty() ? "No passwords saved." : allPasswords.c_str());
+    uiData->output->value(allPasswords.empty() ? "No passwords saved." : allPasswords.c_str());
     std::cout << "10" << std::endl;
 }
 
 void save_from_ui(Fl_Widget*, void* data) {
     UIData* uiData = static_cast<UIData*>(data);
-    const char* site = uiData->siteInput->value();
-    const char* password = uiData->passInput->value();
+    const std::string site = uiData->siteInput->value();
+    const std::string password = uiData->passInput->value();
+    const std::string masterkey = uiData->masterInput->value();
     std::cout << "0" << std::endl;
-    // std::string site = siteInput->value();
     std::cout << "0.1" << std::endl;
     std::cout << "0.2" << std::endl;
-    std::string masterkey = "abcd1234";
     std::cout << "1" << std::endl;
-    // if (site.empty() || password.empty()) {
-    //     uiData->output->value("Please enter both site and the password");
-    //     return;
-    // }
+    if (site.empty() || password.empty()) {
+        uiData->output->value("Please enter both site and the password");
+        return;
+    }
     std::cout << "2" << std::endl;
     std::vector<unsigned char> key, salt, iv;
     std::ifstream file("salt.dat", std::ios::binary);
@@ -301,24 +301,25 @@ void save_from_ui(Fl_Widget*, void* data) {
 int main() {
 
     // Main Window
-    Fl_Window *window = new Fl_Window(400, 300, "Password Manager");
+    Fl_Window *window = new Fl_Window(600, 500, "Password Manager");
 
     // Input Fields
     UIData uiData;
-    uiData.siteInput = new Fl_Input(100, 20, 250, 30, "Site:");
-    uiData.passInput = new Fl_Input(100, 60, 250, 30, "Password:");
+    uiData.masterInput = new Fl_Input(100, 20, 350, 30, "Masterkey:");
+    uiData.siteInput = new Fl_Input(100, 60, 350, 30, "Site:");
+    uiData.passInput = new Fl_Input(100, 100, 350, 30, "Password:");
 
-    uiData.passInput->type(FL_SECRET_INPUT);
+    uiData.masterInput->type(FL_SECRET_INPUT);
 
     // Buttons
-    Fl_Button *saveButton = new Fl_Button(50, 110, 130, 30, "Save Password");
-    Fl_Button *loadButton = new Fl_Button(220, 110, 130, 30, "Show Password");
+    Fl_Button *saveButton = new Fl_Button(100, 150, 130, 30, "Save Password");
+    Fl_Button *loadButton = new Fl_Button(300, 150, 130, 30, "Show Password");
 
     // Output Area
-    uiData.output = new Fl_Multiline_Output(50, 160, 300, 100, "");
+    uiData.output = new Fl_Multiline_Output(50, 200, 400, 200, "");
 
     saveButton->callback(save_from_ui, &uiData);
-    loadButton->callback(load_into_ui, (void*)uiData.output);
+    loadButton->callback(load_into_ui, &uiData);
 
     window->end();
     window->show();
