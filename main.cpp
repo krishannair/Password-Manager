@@ -122,7 +122,7 @@ std::string decrypt_aes(const std::vector<unsigned char>& ciphertext, const std:
 }
 
 
-std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> load_from_db(const std::string& database_name) {
+std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> load_from_db(const std::string search_site, const std::string& database_name) {
     sqlite3* db;
     int rc = sqlite3_open((database_name).c_str(), &db);
     if(rc) {
@@ -134,29 +134,62 @@ std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsi
     }
     std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> password_entries;
 
-    std::string select_sql = "SELECT site, iv, encrypted_password FROM passwords";
-    sqlite3_stmt* stmt;
-    rc = sqlite3_prepare_v2(db, select_sql.c_str(), -1, &stmt, nullptr);
-    if(rc != SQLITE_OK) {
-        std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
-        exit(1);
-    }
-    while(sqlite3_step(stmt) == SQLITE_ROW) {  // Loop over each row of the result
-        std::string site = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
-        const void* iv_data = sqlite3_column_blob(stmt, 1);  // Retrieve IV as BLOB
-        int iv_size = sqlite3_column_bytes(stmt, 1);  // Get the size of the IV
-        const void* encrypted_password_data = sqlite3_column_blob(stmt, 2);  // Retrieve encrypted password
-        int encrypted_password_size = sqlite3_column_bytes(stmt, 2);  // Get the size of the encrypted password
-        
-        std::vector<unsigned char> iv((unsigned char*)iv_data, (unsigned char*)iv_data + iv_size);
-        std::vector<unsigned char> encrypted_password((unsigned char*)encrypted_password_data, (unsigned char*)encrypted_password_data + encrypted_password_size);
+    if(search_site == "") {
 
-        // Now you can decrypt the password using your decryptAES function
-        // std::string decryptedPassword = decrypt_aes(encrypted_password, key, iv);
-        // std::cout << "Decrypted password: " << decryptedPassword << std::endl;
-        password_entries.push_back(std::make_tuple(site, iv, encrypted_password));
+        std::string select_sql = "SELECT site, iv, encrypted_password FROM passwords";
+        sqlite3_stmt* stmt;
+        rc = sqlite3_prepare_v2(db, select_sql.c_str(), -1, &stmt, nullptr);
+        if(rc != SQLITE_OK) {
+            std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            exit(1);
+        }
+        while(sqlite3_step(stmt) == SQLITE_ROW) {  // Loop over each row of the result
+            std::string site = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            const void* iv_data = sqlite3_column_blob(stmt, 1);  // Retrieve IV as BLOB
+            int iv_size = sqlite3_column_bytes(stmt, 1);  // Get the size of the IV
+            const void* encrypted_password_data = sqlite3_column_blob(stmt, 2);  // Retrieve encrypted password
+            int encrypted_password_size = sqlite3_column_bytes(stmt, 2);  // Get the size of the encrypted password
+            
+            std::vector<unsigned char> iv((unsigned char*)iv_data, (unsigned char*)iv_data + iv_size);
+            std::vector<unsigned char> encrypted_password((unsigned char*)encrypted_password_data, (unsigned char*)encrypted_password_data + encrypted_password_size);
+            
+            // Now you can decrypt the password using your decryptAES function
+            // std::string decryptedPassword = decrypt_aes(encrypted_password, key, iv);
+            // std::cout << "Decrypted password: " << decryptedPassword << std::endl;
+            password_entries.push_back(std::make_tuple(site, iv, encrypted_password));
+        }
+        sqlite3_finalize(stmt);  // Clean up after using the statement
     }
-    sqlite3_finalize(stmt);  // Clean up after using the statement
+    else {
+        std::string select_sql = "SELECT site, iv, encrypted_password FROM passwords WHERE LOWER(site) LIKE LOWER(?)";
+        sqlite3_stmt* stmt;
+        rc = sqlite3_prepare_v2(db, select_sql.c_str(), -1, &stmt, nullptr);
+        if(rc != SQLITE_OK) {
+            std::cerr << "Failed to prepare statement: " << sqlite3_errmsg(db) << std::endl;
+            sqlite3_close(db);
+            exit(1);
+        }
+
+        sqlite3_bind_text(stmt, 1, search_site.c_str(), -1, SQLITE_STATIC);  // To bind the 1st ? in the statement with search_site value
+
+        while(sqlite3_step(stmt) == SQLITE_ROW) {  // Loop over each row of the result
+            std::string site = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+            const void* iv_data = sqlite3_column_blob(stmt, 1);  // Retrieve IV as BLOB
+            int iv_size = sqlite3_column_bytes(stmt, 1);  // Get the size of the IV
+            const void* encrypted_password_data = sqlite3_column_blob(stmt, 2);  // Retrieve encrypted password
+            int encrypted_password_size = sqlite3_column_bytes(stmt, 2);  // Get the size of the encrypted password
+            
+            std::vector<unsigned char> iv((unsigned char*)iv_data, (unsigned char*)iv_data + iv_size);
+            std::vector<unsigned char> encrypted_password((unsigned char*)encrypted_password_data, (unsigned char*)encrypted_password_data + encrypted_password_size);
+            
+            // Now you can decrypt the password using your decryptAES function
+            // std::string decryptedPassword = decrypt_aes(encrypted_password, key, iv);
+            // std::cout << "Decrypted password: " << decryptedPassword << std::endl;
+            password_entries.push_back(std::make_tuple(site, iv, encrypted_password));
+        }
+        sqlite3_finalize(stmt);  // Clean up after using the statement
+    }
     sqlite3_close(db);
     return password_entries;
 }
@@ -234,33 +267,43 @@ void load_into_ui(Fl_Widget*, void* data) {
     std::string site, encrypted_password;
     std::string allPasswords="";
     std::vector<unsigned char> key, salt, iv;
+    std::string search_site = uiData->siteInput->value();
     std::ifstream file("salt.dat", std::ios::binary);
     if(!file) {
-        std::cout << "Unable to find salt file." << std::endl;
+        std::cerr << "Unable to find salt file." << std::endl;
         return;
     }
     else {
         load_salt("salt.dat", salt);
     }
-    std::cout << "6" << std::endl;
-    derive_key(masterkey, key, salt);
-    std::cout << "7" << std::endl;
-    std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> passwords = load_from_db("passwords.db");
-    std::cout << "8" << std::endl;
-    for (const auto& entry : passwords) {
-        std::string site = std::get<0>(entry);
-        std::vector<unsigned char> iv = std::get<1>(entry);
-        std::vector<unsigned char> encrypted_password = std::get<2>(entry);
+    if(search_site.empty()) {
 
-        // Decrypt password using the stored IV and key
-        std::string decrypted_password = decrypt_aes(encrypted_password, key, iv);
-        allPasswords += "Site:" + site + "\nPassword:" + decrypted_password + "\n\n";
-        std::cout << decrypted_password << std::endl;   
+        derive_key(masterkey, key, salt);
+        std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> passwords = load_from_db("", "passwords.db");
+        for (const auto& entry : passwords) {
+            std::string site = std::get<0>(entry);
+            std::vector<unsigned char> iv = std::get<1>(entry);
+            std::vector<unsigned char> encrypted_password = std::get<2>(entry);
+            
+            // Decrypt password using the stored IV and key
+            std::string decrypted_password = decrypt_aes(encrypted_password, key, iv);
+            allPasswords += "Site:" + site + "\nPassword:" + decrypted_password + "\n\n";
+        }
     }
-    std::cout << "9" << std::endl;
-    std::cout << allPasswords << std::endl;
-    uiData->output->value(allPasswords.empty() ? "No passwords saved." : allPasswords.c_str());
-    std::cout << "10" << std::endl;
+    else {
+        derive_key(masterkey, key, salt);
+        std::vector<std::tuple<std::string, std::vector<unsigned char>, std::vector<unsigned char>>> passwords = load_from_db(search_site, "passwords.db");
+        for (const auto& entry : passwords) {
+            std::string site = std::get<0>(entry);
+            std::vector<unsigned char> iv = std::get<1>(entry);
+            std::vector<unsigned char> encrypted_password = std::get<2>(entry);
+            
+            // Decrypt password using the stored IV and key
+            std::string decrypted_password = decrypt_aes(encrypted_password, key, iv);
+            allPasswords += "Site:" + site + "\nPassword:" + decrypted_password + "\n\n";
+        }
+    }
+    uiData->output->value(allPasswords.empty() ? "No passwords found." : allPasswords.c_str());
 }
 
 void save_from_ui(Fl_Widget*, void* data) {
@@ -268,15 +311,10 @@ void save_from_ui(Fl_Widget*, void* data) {
     const std::string site = uiData->siteInput->value();
     const std::string password = uiData->passInput->value();
     const std::string masterkey = uiData->masterInput->value();
-    std::cout << "0" << std::endl;
-    std::cout << "0.1" << std::endl;
-    std::cout << "0.2" << std::endl;
-    std::cout << "1" << std::endl;
     if (site.empty() || password.empty()) {
         uiData->output->value("Please enter both site and the password");
         return;
     }
-    std::cout << "2" << std::endl;
     std::vector<unsigned char> key, salt, iv;
     std::ifstream file("salt.dat", std::ios::binary);
     if(!file) {
@@ -286,13 +324,10 @@ void save_from_ui(Fl_Widget*, void* data) {
     else {
         load_salt("salt.dat", salt);
     }
-    std::cout << "3" << std::endl;
 
     derive_key(masterkey, key, salt);
     std::pair<std::vector<unsigned char> , std::vector<unsigned char>> encPassAndIV = encrypt_aes(password, key, iv);
-    std::cout << "4" << std::endl;
     save_to_db("passwords.db", site, encPassAndIV.first, encPassAndIV.second);
-    std::cout << "5" << std::endl;
     uiData->output->value("Password saved!");
     uiData->siteInput->value(""); 
     uiData->passInput->value(""); 
